@@ -212,6 +212,6 @@ const Schedule = () => {
       <Footer />
     </div>
   );
-};
+}; 
 
 export default Schedule;

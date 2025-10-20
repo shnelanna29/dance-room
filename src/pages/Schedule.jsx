@@ -19,7 +19,6 @@ const Schedule = () => {
     const weekSchedule = getScheduleForWeek(weekOffset);
     setSchedule(weekSchedule);
     
-    // Автоматически раскрыть все дни при загрузке
     const allDays = {};
     weekSchedule.forEach(lesson => {
       allDays[lesson.date] = true;

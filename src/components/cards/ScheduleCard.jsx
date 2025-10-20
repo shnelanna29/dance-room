@@ -32,6 +32,6 @@ const ScheduleCard = ({ lesson, onBook, isBooking }) => {
       </button>
     </div>
   );
-};
+}; 
 
 export default ScheduleCard;

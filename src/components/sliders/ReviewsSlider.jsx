@@ -8,6 +8,14 @@ import './ReviewsSlider.css';
 import ReviewCard from '../cards/ReviewCard';
 
 const ReviewsSlider = ({ reviews }) => {
+  const displayReviews = React.useMemo(() => {
+    return reviews?.slice(0, 10) || [];
+  }, [reviews]);
+
+  if (!displayReviews.length) {
+    return <div>Отзывов пока нет</div>;
+  }
+
   return (
     <div className="reviews-slider">
       <Swiper
@@ -22,7 +30,7 @@ const ReviewsSlider = ({ reviews }) => {
           1024: { slidesPerView: 3 }
         }}
       >
-        {reviews.map((review) => (
+        {displayReviews.map((review) => (
           <SwiperSlide key={review.id}>
             <ReviewCard {...review} />
           </SwiperSlide>

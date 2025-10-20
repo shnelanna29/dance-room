@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { useNavigate } from 'react-router-dom';
@@ -10,37 +10,16 @@ import StylesSlider from '../components/sliders/StylesSlider';
 import ReviewsSlider from '../components/sliders/ReviewsSlider';
 import { trialLessonSchema } from '../utils/validationSchemas';
 import { danceStyles } from '../data/mockData';
-import { getReviews } from '../services/api';
+import { useReviews } from '../hooks/useReviews';
 import './Home.css';
 
 const Home = () => {
   const navigate = useNavigate();
-  const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: reviews, isLoading, isError, error } = useReviews();
 
   const { register, handleSubmit, formState: { errors }, reset } = useForm({
     resolver: yupResolver(trialLessonSchema)
   });
-
-  // GET запрос - загрузка отзывов при монтировании компонента
-  useEffect(() => {
-    const fetchReviews = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await getReviews();
-        setReviews(data);
-      } catch (err) {
-        setError(err.message);
-        console.error('Ошибка загрузки отзывов:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchReviews();
-  }, []);
 
   const onSubmit = (data) => {
     alert(`Спасибо, ${data.name}! Мы свяжемся с вами по номеру ${data.phone} для подтверждения записи на ${data.style}.`);
@@ -141,23 +120,23 @@ const Home = () => {
               <p className="section-subtitle">Узнайте, что говорят о нас</p>
             </div>
             
-            {loading && (
+            {isLoading && (
               <div className="loading-spinner">
                 <div className="spinner"></div>
                 <p>Загрузка отзывов...</p>
               </div>
             )}
             
-            {error && (
+            {isError && (
               <div className="error-message-block">
-                <p>⚠️ Ошибка загрузки: {error}</p>
+                <p>⚠️ Ошибка загрузки: {error.message}</p>
                 <Button onClick={() => window.location.reload()}>
                   Попробовать снова
                 </Button>
               </div>
             )}
             
-            {!loading && !error && reviews.length > 0 && (
+            {reviews && reviews.length > 0 && (
               <ReviewsSlider reviews={reviews} />
             )}
           </div>

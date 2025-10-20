@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import { useNavigate } from 'react-router-dom';
@@ -8,7 +8,8 @@ import Footer from '../components/common/Footer';
 import Input from '../components/common/Input';
 import Button from '../components/common/Button';
 import { cancelBookingSchema } from '../utils/validationSchemas';
-import { createReview, updateReview, deleteReview } from '../services/api';
+import { useBookings, useRemoveBooking } from '../hooks/useBookings';
+import { useCreateReview, useUpdateReview, useDeleteReview } from '../hooks/useReviews';
 import * as yup from 'yup';
 import './Profile.css';
 
@@ -26,14 +27,17 @@ const reviewSchema = yup.object({
 
 const Profile = () => {
   const { user, isAuthenticated } = useAuth();
-  const [bookings, setBookings] = useState([]);
   const [cancelingId, setCancelingId] = useState(null);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [editingReview, setEditingReview] = useState(null);
   const [myReviews, setMyReviews] = useState([]);
-  const [apiLoading, setApiLoading] = useState(false);
-  const [apiError, setApiError] = useState(null);
   const navigate = useNavigate();
+
+  const { data: bookings = [] } = useBookings();
+  const removeBookingMutation = useRemoveBooking();
+  const createReviewMutation = useCreateReview();
+  const updateReviewMutation = useUpdateReview();
+  const deleteReviewMutation = useDeleteReview();
 
   const { register: registerCancel, handleSubmit: handleCancelSubmit, formState: { errors: cancelErrors }, reset: resetCancel } = useForm({
     resolver: yupResolver(cancelBookingSchema)
@@ -45,19 +49,12 @@ const Profile = () => {
 
   const rating = watch('rating', 0);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
       return;
     }
 
-    const storedBookings = JSON.parse(localStorage.getItem('bookings') || '[]');
-    const sortedBookings = storedBookings.sort((a, b) => 
-      new Date(a.date) - new Date(b.date) || a.time.localeCompare(b.time)
-    );
-    setBookings(sortedBookings);
-
-    // Загрузка отзывов пользователя из localStorage
     const storedReviews = JSON.parse(localStorage.getItem('myReviews') || '[]');
     setMyReviews(storedReviews);
   }, [isAuthenticated, navigate]);
@@ -78,91 +75,85 @@ const Profile = () => {
   };
 
   const onCancelSubmit = (data) => {
-    const updatedBookings = bookings.filter(b => b.id !== cancelingId);
-    setBookings(updatedBookings);
-    localStorage.setItem('bookings', JSON.stringify(updatedBookings));
-    alert(`Запись отменена. Причина: ${data.reason}`);
-    setCancelingId(null);
-    resetCancel();
+    removeBookingMutation.mutate(cancelingId, {
+      onSuccess: () => {
+        alert(`Запись отменена. Причина: ${data.reason}`);
+        setCancelingId(null);
+        resetCancel();
+      },
+    });
   };
 
-  // POST запрос - создание нового отзыва
-  const onReviewSubmit = async (data) => {
-    try {
-      setApiLoading(true);
-      setApiError(null);
+  const onReviewSubmit = (data) => {
+    const reviewData = {
+      name: user.fullName,
+      text: data.text,
+      rating: parseInt(data.rating),
+      email: user.email
+    };
 
-      const reviewData = {
-        name: user.fullName,
-        text: data.text,
-        rating: parseInt(data.rating),
-        email: user.email
-      };
-
-      if (editingReview) {
-        // PUT запрос - обновление существующего отзыва
-        const updated = await updateReview(editingReview.id, reviewData);
-        
-        const updatedReviews = myReviews.map(r => 
-          r.id === editingReview.id ? { ...updated, localId: r.localId } : r
-        );
-        setMyReviews(updatedReviews);
-        localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
-        
-        alert('Отзыв успешно обновлен!');
-        setEditingReview(null);
-      } else {
-        // POST запрос - создание нового отзыва
-        const newReview = await createReview(reviewData);
-        
-        const reviewWithLocalId = {
-          ...newReview,
-          localId: Date.now()
-        };
-        
-        const updatedReviews = [...myReviews, reviewWithLocalId];
-        setMyReviews(updatedReviews);
-        localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
-        
-        alert('Спасибо за ваш отзыв! Он успешно добавлен.');
-      }
-
-      resetReview();
-      setShowReviewForm(false);
-    } catch (err) {
-      setApiError(err.message);
-      alert(`Ошибка: ${err.message}`);
-    } finally {
-      setApiLoading(false);
+    if (editingReview) {
+      updateReviewMutation.mutate(
+        { id: editingReview.id, data: reviewData },
+        {
+          onSuccess: (updated) => {
+            const updatedReviews = myReviews.map(r => 
+              r.id === editingReview.id ? { ...updated, localId: r.localId } : r
+            );
+            setMyReviews(updatedReviews);
+            localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
+            
+            alert('Отзыв успешно обновлен!');
+            setEditingReview(null);
+            resetReview();
+            setShowReviewForm(false);
+          },
+          onError: (err) => {
+            alert(`Ошибка: ${err.message}`);
+          },
+        }
+      );
+    } else {
+      createReviewMutation.mutate(reviewData, {
+        onSuccess: (newReview) => {
+          const reviewWithLocalId = {
+            ...newReview,
+            localId: Date.now()
+          };
+          
+          const updatedReviews = [...myReviews, reviewWithLocalId];
+          setMyReviews(updatedReviews);
+          localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
+          
+          alert('Спасибо за ваш отзыв! Он успешно добавлен.');
+          resetReview();
+          setShowReviewForm(false);
+        },
+        onError: (err) => {
+          alert(`Ошибка: ${err.message}`);
+        },
+      });
     }
   };
 
-  // DELETE запрос - удаление отзыва
-  const handleDeleteReview = async (review) => {
+  const handleDeleteReview = (review) => {
     if (!window.confirm('Вы уверены, что хотите удалить этот отзыв?')) {
       return;
     }
 
-    try {
-      setApiLoading(true);
-      setApiError(null);
-
-      await deleteReview(review.id);
-
-      const updatedReviews = myReviews.filter(r => r.localId !== review.localId);
-      setMyReviews(updatedReviews);
-      localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
-
-      alert('Отзыв успешно удален');
-    } catch (err) {
-      setApiError(err.message);
-      alert(`Ошибка удаления: ${err.message}`);
-    } finally {
-      setApiLoading(false);
-    }
+    deleteReviewMutation.mutate(review.id, {
+      onSuccess: () => {
+        const updatedReviews = myReviews.filter(r => r.localId !== review.localId);
+        setMyReviews(updatedReviews);
+        localStorage.setItem('myReviews', JSON.stringify(updatedReviews));
+        alert('Отзыв успешно удален');
+      },
+      onError: (err) => {
+        alert(`Ошибка удаления: ${err.message}`);
+      },
+    });
   };
 
-  // Функция для редактирования отзыва
   const handleEditReview = (review) => {
     setEditingReview(review);
     setValue('text', review.text);
@@ -177,6 +168,11 @@ const Profile = () => {
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   };
+
+  const isLoading = createReviewMutation.isPending || 
+                     updateReviewMutation.isPending || 
+                     deleteReviewMutation.isPending ||
+                     removeBookingMutation.isPending;
 
   return (
     <div className="page">
@@ -238,8 +234,7 @@ const Profile = () => {
                   </Button>
                 ) : (
                   <form className="review-form" onSubmit={handleReviewSubmit(onReviewSubmit)}>
-                    {apiLoading && <div className="api-loading">Отправка...</div>}
-                    {apiError && <div className="api-error">Ошибка: {apiError}</div>}
+                    {isLoading && <div className="api-loading">Отправка...</div>}
                     
                     <div className="input-wrapper">
                       <label className="input-label">Ваш отзыв</label>
@@ -271,7 +266,7 @@ const Profile = () => {
                     </div>
 
                     <div className="review-actions">
-                      <Button type="submit" disabled={apiLoading}>
+                      <Button type="submit" disabled={isLoading}>
                         {editingReview ? 'Обновить отзыв' : 'Отправить отзыв'}
                       </Button>
                       <Button variant="secondary" onClick={() => {
@@ -300,7 +295,7 @@ const Profile = () => {
                           <Button variant="outline" onClick={() => handleEditReview(review)}>
                             Редактировать
                           </Button>
-                          <Button variant="outline" onClick={() => handleDeleteReview(review)}>
+                          <Button variant="outline" onClick={() => handleDeleteReview(review)} disabled={isLoading}>
                             Удалить
                           </Button>
                         </div>
@@ -350,7 +345,7 @@ const Profile = () => {
                                   error={cancelErrors.reason?.message}
                                 />
                                 <div className="cancel-actions">
-                                  <Button type="submit" variant="outline">
+                                  <Button type="submit" variant="outline" disabled={isLoading}>
                                     Подтвердить отмену
                                   </Button>
                                   <Button 

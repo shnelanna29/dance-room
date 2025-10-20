@@ -1,30 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/common/Header';
 import Footer from '../components/common/Footer';
 import ScheduleCard from '../components/cards/ScheduleCard';
 import Button from '../components/common/Button';
-import { getScheduleForWeek } from '../data/mockData';
+import { useSchedule } from '../hooks/useSchedule';
+import { useAddBooking } from '../hooks/useBookings';
 import './Schedule.css';
 
 const Schedule = () => {
   const [weekOffset, setWeekOffset] = useState(0);
-  const [schedule, setSchedule] = useState([]);
   const [expandedDays, setExpandedDays] = useState({});
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const weekSchedule = getScheduleForWeek(weekOffset);
-    setSchedule(weekSchedule);
-    
-    const allDays = {};
-    weekSchedule.forEach(lesson => {
-      allDays[lesson.date] = true;
-    });
-    setExpandedDays(allDays);
-  }, [weekOffset]);
+  const { data: schedule = [], isLoading, isError, error } = useSchedule(weekOffset);
+  const addBookingMutation = useAddBooking();
+
+  React.useEffect(() => {
+    if (schedule.length > 0) {
+      const allDays = {};
+      schedule.forEach(lesson => {
+        allDays[lesson.date] = true;
+      });
+      setExpandedDays(allDays);
+    }
+  }, [schedule]);
 
   const handleBook = (lesson) => {
     if (!isAuthenticated) {
@@ -41,9 +43,14 @@ const Schedule = () => {
       return;
     }
 
-    bookings.push(lesson);
-    localStorage.setItem('bookings', JSON.stringify(bookings));
-    alert(`Вы успешно записались на ${lesson.style} ${formatDate(lesson.date)} в ${lesson.time}`);
+    addBookingMutation.mutate(lesson, {
+      onSuccess: () => {
+        alert(`Вы успешно записались на ${lesson.style} ${formatDate(lesson.date)} в ${lesson.time}`);
+      },
+      onError: (err) => {
+        alert(`Ошибка записи: ${err.message}`);
+      },
+    });
   };
 
   const toggleDay = (date) => {
@@ -114,70 +121,91 @@ const Schedule = () => {
             <div className="week-indicator">{getWeekTitle()}</div>
           </div>
 
-          <div className="schedule-controls">
-            <Button 
-              variant="secondary" 
-              onClick={() => toggleAllDays(true)}
-              disabled={allExpanded}
-            >
-              Развернуть все
-            </Button>
-            <Button 
-              variant="secondary" 
-              onClick={() => toggleAllDays(false)}
-              disabled={allCollapsed}
-            >
-              Свернуть все
-            </Button>
-          </div>
+          {isLoading && (
+            <div className="loading-spinner">
+              <div className="spinner"></div>
+              <p>Загрузка расписания...</p>
+            </div>
+          )}
 
-          <div className="schedule-by-days">
-            {Object.entries(groupedSchedule).map(([date, data]) => (
-              <div key={date} className="day-section">
-                <button 
-                  className={`day-header ${expandedDays[date] ? 'expanded' : ''}`}
-                  onClick={() => toggleDay(date)}
-                >
-                  <div className="day-header-info">
-                    <span className="day-name">{data.day}</span>
-                    <span className="day-date">{formatShortDate(date)}</span>
-                  </div>
-                  <div className="day-header-meta">
-                    <span className="lessons-count">
-                      {data.lessons.length} {data.lessons.length === 1 ? 'занятие' : 
-                       data.lessons.length < 5 ? 'занятия' : 'занятий'}
-                    </span>
-                    <span className={`expand-icon ${expandedDays[date] ? 'rotated' : ''}`}>
-                      ▼
-                    </span>
-                  </div>
-                </button>
-
-                <div className={`day-content ${expandedDays[date] ? 'expanded' : ''}`}>
-                  <div className="day-lessons-grid">
-                    {data.lessons.map(lesson => (
-                      <ScheduleCard 
-                        key={lesson.id}
-                        lesson={lesson}
-                        onBook={handleBook}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="schedule-actions">
-            {weekOffset > 0 && (
-              <Button variant="secondary" onClick={() => setWeekOffset(weekOffset - 1)}>
-                ← Предыдущая неделя
+          {isError && (
+            <div className="error-message-block">
+              <p>⚠️ Ошибка загрузки: {error.message}</p>
+              <Button onClick={() => window.location.reload()}>
+                Попробовать снова
               </Button>
-            )}
-            <Button onClick={() => setWeekOffset(weekOffset + 1)}>
-              Следующая неделя →
-            </Button>
-          </div>
+            </div>
+          )}
+
+          {!isLoading && !isError && schedule.length > 0 && (
+            <>
+              <div className="schedule-controls">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => toggleAllDays(true)}
+                  disabled={allExpanded}
+                >
+                  Развернуть все
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  onClick={() => toggleAllDays(false)}
+                  disabled={allCollapsed}
+                >
+                  Свернуть все
+                </Button>
+              </div>
+
+              <div className="schedule-by-days">
+                {Object.entries(groupedSchedule).map(([date, data]) => (
+                  <div key={date} className="day-section">
+                    <button 
+                      className={`day-header ${expandedDays[date] ? 'expanded' : ''}`}
+                      onClick={() => toggleDay(date)}
+                    >
+                      <div className="day-header-info">
+                        <span className="day-name">{data.day}</span>
+                        <span className="day-date">{formatShortDate(date)}</span>
+                      </div>
+                      <div className="day-header-meta">
+                        <span className="lessons-count">
+                          {data.lessons.length} {data.lessons.length === 1 ? 'занятие' : 
+                           data.lessons.length < 5 ? 'занятия' : 'занятий'}
+                        </span>
+                        <span className={`expand-icon ${expandedDays[date] ? 'rotated' : ''}`}>
+                          ▼
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className={`day-content ${expandedDays[date] ? 'expanded' : ''}`}>
+                      <div className="day-lessons-grid">
+                        {data.lessons.map(lesson => (
+                          <ScheduleCard 
+                            key={lesson.id}
+                            lesson={lesson}
+                            onBook={handleBook}
+                            isBooking={addBookingMutation.isPending}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="schedule-actions">
+                {weekOffset > 0 && (
+                  <Button variant="secondary" onClick={() => setWeekOffset(weekOffset - 1)}>
+                    ← Предыдущая неделя
+                  </Button>
+                )}
+                <Button onClick={() => setWeekOffset(weekOffset + 1)}>
+                  Следующая неделя →
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </main>
 
